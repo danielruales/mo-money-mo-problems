@@ -36,6 +36,31 @@
                                 </div>
                             </div>
                             
+                            <!-- Description Filter -->
+                            <div class="col-md-6">
+                                <label for="description" class="form-label">Description Search</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                    <input type="text" class="form-control" id="description" name="description" 
+                                           placeholder="Search transaction descriptions" value="{{ description_filter }}">
+                                    <button class="btn btn-outline-primary" type="submit">
+                                        <i class="bi bi-search"></i> Search
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-3">
+                                <label for="merchant" class="form-label">Merchant</label>
+                                <select class="form-select" id="merchant" name="merchant" onchange="this.form.submit()">
+                                    <option value="">All Merchants</option>
+                                    {% for merchant in filter_options.merchants|sort %}
+                                    <option value="{{ merchant }}" {% if merchant_filter == merchant %}selected{% endif %}>
+                                        {{ merchant }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
                             <div class="col-md-3">
                                 <label for="type" class="form-label">Transaction Type</label>
                                 <select class="form-select" id="type" name="type" onchange="this.form.submit()">
@@ -70,6 +95,20 @@
                                 </select>
                             </div>
                             <div class="col-md-3">
+                                <label for="refund_status" class="form-label">Refund Status</label>
+                                <select class="form-select" id="refund_status" name="refund_status" onchange="this.form.submit()">
+                                    {% for status in filter_options.refund_statuses %}
+                                    <option value="{{ status }}" {% if refund_status == status %}selected{% endif %}>
+                                        {% if status == "all" %}All Transactions
+                                        {% elif status == "none" %}Not Refunded
+                                        {% elif status == "refunded" %}Refunded
+                                        {% elif status == "matched" %}Refund Transactions
+                                        {% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
                                 <label class="form-label">Amount Range</label>
                                 <div class="input-group">
                                     <input type="number" class="form-control" id="min_amount" name="min_amount" 
@@ -98,17 +137,31 @@
                             <tr>
                                 <th>Date</th>
                                 <th>Description</th>
+                                <th>Merchant</th>
                                 <th>Category</th>
                                 <th>Source</th>
                                 <th>Type</th>
-                                <th class="text-end">Amount</th>
+                                <th class="text-end">Original Amount</th>
+                                <th class="text-end">Net Amount</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for txn in transactions %}
-                            <tr>
+                            <tr class="{% if txn.refund_status == 'refunded' %}table-warning{% elif txn.refund_status == 'matched' %}table-info{% endif %}">
                                 <td>{{ txn.date }}</td>
-                                <td>{{ txn.description }}</td>
+                                <td>
+                                    {{ txn.description }}
+                                    {% if txn.refund_status == 'refunded' %}
+                                    <span class="badge bg-warning text-dark">Refunded</span>
+                                    {% elif txn.refund_status == 'matched' %}
+                                    <span class="badge bg-info text-dark">Refund</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="/transactions?merchant={{ txn.merchant }}" class="text-decoration-none">
+                                        {{ txn.merchant }}
+                                    </a>
+                                </td>
                                 <td>
                                     {% if txn.category %}
                                     <a href="/deep-dive/{{ txn.category }}" class="badge bg-secondary text-decoration-none">
@@ -130,6 +183,21 @@
                                     <span class="transaction-amount {% if txn.type in ['payment', 'refund'] %}positive{% else %}negative{% endif %}">
                                         {% if txn.type in ['payment', 'refund'] %}-{% endif %}${{ "%.2f"|format(txn.amount) }}
                                     </span>
+                                </td>
+                                <td class="text-end">
+                                    {% if txn.type == 'charge' and txn.refund_status == 'refunded' %}
+                                    <span class="transaction-amount {% if txn.net_amount > 0 %}negative{% else %}text-success{% endif %}">
+                                        ${{ "%.2f"|format(txn.net_amount) }}
+                                    </span>
+                                    {% elif txn.type == 'charge' %}
+                                    <span class="transaction-amount negative">
+                                        ${{ "%.2f"|format(txn.amount) }}
+                                    </span>
+                                    {% elif txn.type in ['payment', 'refund'] %}
+                                    <span class="transaction-amount positive">
+                                        -${{ "%.2f"|format(txn.amount) }}
+                                    </span>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}

@@ -191,16 +191,23 @@ def categories():
     if end_date:
         filtered_transactions = filtered_transactions[filtered_transactions['transaction_date'] <= pd.to_datetime(end_date)]
     
-    charges = filtered_transactions[filtered_transactions['transaction_type'].str.lower() == 'charge']
+    # Only include charges, and account for refunds
+    charges = filtered_transactions[filtered_transactions['transaction_type'].str.lower() == 'charge'].copy()
     
-    # Get spending by category
-    category_data = charges.groupby('category').agg({
-        'amount': ['sum', 'count', 'mean'],
-        'transaction_date': ['min', 'max']
-    })
+    # Get spending by category (accounting for refunds)
+    category_data = charges.groupby('category').apply(
+        lambda grp: pd.Series({
+            'total': grp['amount'].sum() - grp['refunded_amount'].sum(),
+            'count': len(grp),
+            'refunded_count': (grp['refund_status'] == 'refunded').sum(),
+            'average': (grp['amount'].sum() - grp['refunded_amount'].sum()) / len(grp) if len(grp) > 0 else 0,
+            'first_date': grp['transaction_date'].min(),
+            'last_date': grp['transaction_date'].max()
+        })
+    ).reset_index()
     
-    category_data.columns = ['total', 'count', 'average', 'first_date', 'last_date']
-    category_data = category_data.sort_values('total', ascending=False).reset_index()
+    # Sort by adjusted total (accounting for refunds)
+    category_data = category_data.sort_values('total', ascending=False)
     
     # Convert to dictionary for template
     categories_list = []
@@ -209,6 +216,7 @@ def categories():
             'name': row['category'],
             'total': row['total'],
             'count': row['count'],
+            'refunded_count': row['refunded_count'],
             'average': row['average'],
             'first_date': row['first_date'].strftime('%Y-%m-%d'),
             'last_date': row['last_date'].strftime('%Y-%m-%d')
@@ -314,8 +322,16 @@ def transactions():
     source = request.args.get('source')
     min_amount = request.args.get('min_amount')
     max_amount = request.args.get('max_amount')
+    refund_status = request.args.get('refund_status', '')
+    description_filter = request.args.get('description', '')
+    merchant_filter = request.args.get('merchant', '')
     
     filtered_df = transactions_df.copy()
+    
+    # Extract merchant name (first word of description) for all transactions
+    filtered_df['merchant'] = filtered_df['description'].apply(
+        lambda x: x.split()[0] if pd.notna(x) and len(x.split()) > 0 else 'Unknown'
+    )
     
     # Apply date filters
     if start_date:
@@ -339,19 +355,37 @@ def transactions():
     if max_amount:
         filtered_df = filtered_df[filtered_df['amount'] <= float(max_amount)]
     
+    if refund_status and refund_status != 'all':
+        filtered_df = filtered_df[filtered_df['refund_status'] == refund_status]
+    
+    # Apply description filter if provided (case-insensitive partial match)
+    if description_filter:
+        filtered_df = filtered_df[filtered_df['description'].str.contains(description_filter, case=False, na=False)]
+    
+    # Apply merchant filter if provided
+    if merchant_filter:
+        filtered_df = filtered_df[filtered_df['merchant'] == merchant_filter]
+    
     # Sort by amount descending instead of date
     filtered_df = filtered_df.sort_values('amount', ascending=False)
     
     # Convert to list of dictionaries for template
     transactions_list = []
     for _, row in filtered_df.iterrows():
+        net_amount = row['amount']
+        if row['transaction_type'].lower() == 'charge' and row['refund_status'] == 'refunded':
+            net_amount = row['amount'] - row['refunded_amount']
+        
         transactions_list.append({
             'date': row['transaction_date'].strftime('%Y-%m-%d'),
             'description': row['description'],
+            'merchant': row['merchant'],
             'amount': row['amount'],
+            'net_amount': net_amount,
             'category': row['category'] if pd.notna(row['category']) else '',
             'source': row['source'],
-            'type': row['transaction_type']
+            'type': row['transaction_type'],
+            'refund_status': row['refund_status']
         })
     
     # Get unique values for filters
@@ -359,6 +393,8 @@ def transactions():
         'categories': transactions_df['category'].dropna().unique().tolist(),
         'sources': transactions_df['source'].unique().tolist(),
         'types': ['charge', 'payment', 'refund'],
+        'refund_statuses': ['all', 'none', 'refunded', 'matched'],
+        'merchants': filtered_df['merchant'].unique().tolist(),
         'start_date': start_date,
         'end_date': end_date
     }
@@ -370,13 +406,15 @@ def transactions():
                           transactions=transactions_list, 
                           filter_options=filter_options,
                           date_range=date_range,
-                          count=len(transactions_list))
+                          count=len(transactions_list),
+                          refund_status=refund_status,
+                          description_filter=description_filter,
+                          merchant_filter=merchant_filter)
 
 @app.route('/deep-dive/<category>')
 def deep_dive_category(category):
     """Perform a deep-dive analysis on a specific category."""
     transactions = load_transactions()
-    charges = transactions[transactions['transaction_type'].str.lower() == 'charge'].copy()
     
     # Calculate default date range (previous month)
     today = datetime.date.today()
@@ -391,12 +429,16 @@ def deep_dive_category(category):
     start_date = request.args.get('start_date', default_start_date)
     end_date = request.args.get('end_date', default_end_date)
     
-    # Apply date filters
+    # Filter transactions by date
+    filtered_transactions = transactions.copy()
     if start_date:
-        charges = charges[charges['transaction_date'] >= pd.to_datetime(start_date)]
+        filtered_transactions = filtered_transactions[filtered_transactions['transaction_date'] >= pd.to_datetime(start_date)]
     
     if end_date:
-        charges = charges[charges['transaction_date'] <= pd.to_datetime(end_date)]
+        filtered_transactions = filtered_transactions[filtered_transactions['transaction_date'] <= pd.to_datetime(end_date)]
+    
+    # Only include charges
+    charges = filtered_transactions[filtered_transactions['transaction_type'].str.lower() == 'charge'].copy()
     
     # Filter to the requested category
     category_txns = charges[charges['category'] == category].copy()
@@ -404,12 +446,16 @@ def deep_dive_category(category):
     if category_txns.empty:
         return render_template('error.html', message=f"No transactions found for category: {category}")
     
-    # Summary statistics
+    # Calculate net amounts (amount - refunded_amount)
+    category_txns['net_amount'] = category_txns['amount'] - category_txns['refunded_amount']
+    
+    # Summary statistics (using net amounts)
     summary = {
-        'total_spent': category_txns['amount'].sum(),
+        'total_spent': category_txns['net_amount'].sum(),
         'transaction_count': len(category_txns),
-        'average_amount': category_txns['amount'].mean(),
-        'largest_transaction': category_txns['amount'].max(),
+        'refunded_count': (category_txns['refund_status'] == 'refunded').sum(),
+        'average_amount': category_txns['net_amount'].mean(),
+        'largest_transaction': category_txns['net_amount'].max(),
         'first_transaction': category_txns['transaction_date'].min().strftime('%Y-%m-%d'),
         'last_transaction': category_txns['transaction_date'].max().strftime('%Y-%m-%d')
     }
@@ -421,14 +467,48 @@ def deep_dive_category(category):
             'date': row['transaction_date'].strftime('%Y-%m-%d'),
             'description': row['description'],
             'amount': row['amount'],
-            'source': row['source']
+            'net_amount': row['net_amount'],
+            'source': row['source'],
+            'refund_status': row['refund_status']
         })
     
-    # Get spending by source for this category
-    by_source = category_txns.groupby('source')['amount'].sum().sort_values(ascending=False).to_dict()
+    # Get spending by source for this category (accounting for refunds)
+    by_source = category_txns.groupby('source')['net_amount'].sum().sort_values(ascending=False).to_dict()
     
-    # Get time series data
-    time_data = category_txns.groupby(category_txns['transaction_date'].dt.date)['amount'].sum()
+    # Extract merchant name (first word of description)
+    category_txns.loc[:, 'merchant'] = category_txns['description'].apply(
+        lambda x: x.split()[0] if pd.notna(x) and len(x.split()) > 0 else 'Unknown'
+    )
+    
+    # Get spending by merchant for this category (accounting for refunds)
+    merchant_data = category_txns.groupby('merchant').agg({
+        'net_amount': 'sum',
+        'amount': 'count',
+        'transaction_date': ['min', 'max']
+    })
+    
+    merchant_data.columns = ['total', 'count', 'first_date', 'last_date']
+    merchant_data['average'] = merchant_data['total'] / merchant_data['count']
+    
+    # Filter out merchants with zero net amount (fully refunded)
+    merchant_data = merchant_data[merchant_data['total'] > 0]
+    
+    merchant_data = merchant_data.sort_values('total', ascending=False).reset_index()
+    
+    # Convert to list of dictionaries for template
+    merchants = []
+    for _, row in merchant_data.iterrows():
+        merchants.append({
+            'name': row['merchant'],
+            'total': row['total'],
+            'count': row['count'],
+            'average': row['average'],
+            'first_date': row['first_date'].strftime('%Y-%m-%d'),
+            'last_date': row['last_date'].strftime('%Y-%m-%d')
+        })
+    
+    # Get time series data (accounting for refunds)
+    time_data = category_txns.groupby(category_txns['transaction_date'].dt.date)['net_amount'].sum()
     
     # Format time series data for chart.js
     time_series_data = {
@@ -449,6 +529,7 @@ def deep_dive_category(category):
                           transactions=txns,
                           by_source=by_source,
                           time_series_data=time_series_data,
+                          merchants=merchants,
                           date_filter=date_filter)
 
 @app.route('/deep-dive/merchant/<merchant>')
@@ -589,7 +670,70 @@ def load_transactions():
     transactions['transaction_date'] = pd.to_datetime(transactions['transaction_date'])
     if 'post_date' in transactions.columns:
         transactions['post_date'] = pd.to_datetime(transactions['post_date'], errors='coerce')
+    
+    # Add a refund_status field and refunded_amount field
+    transactions['refund_status'] = 'none'
+    transactions['refunded_amount'] = 0.0
+    
+    # Process refunds
+    match_refunds_to_charges(transactions)
+    
     return transactions
+
+def match_refunds_to_charges(transactions):
+    """
+    Match refund transactions to their original charges based on description, amount and date proximity.
+    Updates the refund_status and refunded_amount fields in the transactions DataFrame.
+    """
+    # Extract refunds
+    refunds = transactions[transactions['transaction_type'].str.lower() == 'refund'].copy()
+    
+    # Create a copy to avoid SettingWithCopyWarning
+    charges = transactions[transactions['transaction_type'].str.lower() == 'charge'].copy()
+    
+    # Process each refund
+    for _, refund in refunds.iterrows():
+        # Look for matching charge based on description and amount
+        refund_amount = refund['amount']
+        refund_desc = refund['description'] if pd.notna(refund['description']) else ""
+        refund_date = refund['transaction_date']
+        
+        # First, try to find an exact match (description + amount)
+        matches = charges[
+            (charges['description'] == refund['description']) & 
+            (charges['amount'] == refund_amount) &
+            (charges['refund_status'] == 'none')
+        ]
+        
+        # If no exact match, try to find a match with similar description
+        if matches.empty:
+            # Try to extract merchant name from first word
+            if pd.notna(refund['description']) and len(refund['description'].split()) > 0:
+                merchant = refund['description'].split()[0]
+                matches = charges[
+                    (charges['description'].str.startswith(merchant, na=False)) & 
+                    (charges['amount'] == refund_amount) &
+                    (charges['refund_status'] == 'none')
+                ]
+        
+        # Find the closest match by date if multiple matches
+        if not matches.empty:
+            if len(matches) > 1:
+                # Select the closest charge by date
+                matches['date_diff'] = (refund_date - matches['transaction_date']).abs()
+                matches = matches.sort_values('date_diff')
+                matched_charge = matches.iloc[0]
+            else:
+                matched_charge = matches.iloc[0]
+            
+            # Update the charge's refund status
+            charge_idx = matched_charge.name
+            transactions.loc[charge_idx, 'refund_status'] = 'refunded'
+            transactions.loc[charge_idx, 'refunded_amount'] = refund_amount
+            
+            # Update the refund's status to indicate it's been matched
+            refund_idx = refund.name
+            transactions.loc[refund_idx, 'refund_status'] = 'matched'
 
 # Create necessary folders
 def create_necessary_folders():

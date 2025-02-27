@@ -54,8 +54,13 @@
     <div class="col-md-3 mb-3">
         <div class="card bg-primary text-white h-100 shadow">
             <div class="card-body text-center">
-                <div class="deep-dive-label">Total Spent</div>
+                <div class="deep-dive-label">Net Spent</div>
                 <div class="deep-dive-stat">${{ "%.2f"|format(summary.total_spent) }}</div>
+                {% if summary.refunded_count > 0 %}
+                <div class="mt-2 small">
+                    <span class="badge bg-warning text-dark">{{ summary.refunded_count }} refunded transactions</span>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -122,8 +127,62 @@
     </div>
 </div>
 
+<!-- Merchant Breakdown -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Top Merchants in {{ category }}</h5>
+                <span class="badge bg-light text-dark">{{ merchants|length }} merchants</span>
+            </div>
+            <div class="card-body">
+                <div class="row g-4">
+                    <div class="col-md-5">
+                        <div style="position: relative; height: 280px; width: 100%;">
+                            <canvas id="merchantChart"></canvas>
+                        </div>
+                        <div class="text-center mt-3">
+                            <p class="text-muted small">Chart shows only merchants with positive net amounts (after refunds)</p>
+                        </div>
+                    </div>
+                    <div class="col-md-7">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Merchant</th>
+                                        <th class="text-end">Transactions</th>
+                                        <th class="text-end">Total</th>
+                                        <th class="text-end">Average</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for merchant in merchants %}
+                                    <tr>
+                                        <td>{{ merchant.name }}</td>
+                                        <td class="text-end">{{ merchant.count }}</td>
+                                        <td class="text-end">${{ "%.2f"|format(merchant.total) }}</td>
+                                        <td class="text-end">${{ "%.2f"|format(merchant.average) }}</td>
+                                        <td>
+                                            <a href="/deep-dive/merchant/{{ merchant.name }}" class="btn btn-sm btn-outline-primary">
+                                                <i class="bi bi-bar-chart"></i>
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Transactions -->
-<div class="row">
+<div class="row mb-4">
     <div class="col-12">
         <div class="card shadow">
             <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
@@ -138,16 +197,25 @@
                                 <th>Date</th>
                                 <th>Description</th>
                                 <th>Source</th>
-                                <th class="text-end">Amount</th>
+                                <th class="text-end">Original</th>
+                                <th class="text-end">Net Amount</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for txn in transactions %}
-                            <tr>
+                            <tr class="{% if txn.refund_status == 'refunded' %}table-warning{% endif %}">
                                 <td>{{ txn.date }}</td>
-                                <td>{{ txn.description }}</td>
+                                <td>
+                                    {{ txn.description }}
+                                    {% if txn.refund_status == 'refunded' %}
+                                    <span class="badge bg-warning text-dark">Refunded</span>
+                                    {% endif %}
+                                </td>
                                 <td>{{ txn.source }}</td>
-                                <td class="text-end text-danger fw-bold">${{ "%.2f"|format(txn.amount) }}</td>
+                                <td class="text-end text-danger">${{ "%.2f"|format(txn.amount) }}</td>
+                                <td class="text-end {% if txn.refund_status == 'refunded' %}text-warning{% else %}text-danger{% endif %}">
+                                    ${{ "%.2f"|format(txn.net_amount) }}
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -166,142 +234,170 @@
         const timeSeriesCtx = document.getElementById('timeSeriesChart').getContext('2d');
         const timeData = {{ time_series_data|tojson }};
         
-        // Check if we have data before creating the chart
-        if (timeData.labels && timeData.labels.length > 0) {
-            new Chart(timeSeriesCtx, {
-                type: 'line',
-                data: {
-                    labels: timeData.labels,
-                    datasets: [{
-                        label: '{{ category }} Spending',
-                        data: timeData.values,
-                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                        borderColor: 'rgba(75, 192, 192, 1)',
-                        borderWidth: 2,
-                        pointRadius: 4,
-                        pointHoverRadius: 6,
-                        pointBackgroundColor: 'rgba(75, 192, 192, 1)',
-                        tension: 0.2,
-                        fill: true
-                    }]
+        new Chart(timeSeriesCtx, {
+            type: 'line',
+            data: {
+                labels: timeData.labels,
+                datasets: [{
+                    label: '{{ category }} Spending',
+                    data: timeData.values,
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: 'rgba(75, 192, 192, 1)',
+                    tension: 0.2,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `$${context.raw.toFixed(2)}`;
+                            }
+                        }
+                    }
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return `$${context.raw.toFixed(2)}`;
-                                },
-                                title: function(context) {
-                                    return `Date: ${context[0].label}`;
-                                }
-                            },
-                            displayColors: false,
-                            padding: 10
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return '$' + value;
-                                }
-                            },
-                            title: {
-                                display: true,
-                                text: 'Amount ($)'
-                            }
-                        },
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Date'
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value;
                             }
                         }
                     },
-                    interaction: {
-                        intersect: false,
-                        mode: 'index'
+                    x: {
+                        display: true
                     }
                 }
-            });
-        } else {
-            // If no data, display a message
-            timeSeriesCtx.font = '16px Arial';
-            timeSeriesCtx.fillStyle = '#6c757d';
-            timeSeriesCtx.textAlign = 'center';
-            timeSeriesCtx.fillText('No time series data available', timeSeriesCtx.canvas.width / 2, timeSeriesCtx.canvas.height / 2);
-        }
+            }
+        });
         
-        // Create pie chart for sources
+        // Create source pie chart
         const sourceCtx = document.getElementById('sourceChart').getContext('2d');
         
         // Prepare source data
         const sources = [];
-        const amounts = [];
+        const sourceAmounts = [];
         
         {% for source, amount in by_source.items() %}
             sources.push('{{ source }}');
-            amounts.push({{ amount }});
+            sourceAmounts.push({{ amount }});
         {% endfor %}
         
-        // Check if we have data before creating the chart
-        if (sources.length > 0) {
-            const sourceColors = [
-                'rgba(255, 99, 132, 0.7)',
-                'rgba(54, 162, 235, 0.7)',
-                'rgba(255, 206, 86, 0.7)',
-                'rgba(75, 192, 192, 0.7)',
-                'rgba(153, 102, 255, 0.7)',
-                'rgba(255, 159, 64, 0.7)'
-            ];
-            
-            const sourceBorders = sourceColors.map(color => color.replace('0.7', '1'));
-            
-            new Chart(sourceCtx, {
-                type: 'pie',
-                data: {
-                    labels: sources,
-                    datasets: [{
-                        data: amounts,
-                        backgroundColor: sourceColors.slice(0, sources.length),
-                        borderColor: sourceBorders.slice(0, sources.length),
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'right',
-                            labels: {
-                                boxWidth: 12
-                            }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const value = context.raw;
-                                    const total = context.dataset.data.reduce((acc, val) => acc + val, 0);
-                                    const percentage = Math.round((value / total) * 100);
-                                    return `${context.label}: $${value.toFixed(2)} (${percentage}%)`;
-                                }
+        const sourceColors = [
+            'rgba(54, 162, 235, 0.7)',
+            'rgba(255, 99, 132, 0.7)',
+            'rgba(255, 206, 86, 0.7)',
+            'rgba(75, 192, 192, 0.7)',
+            'rgba(153, 102, 255, 0.7)'
+        ];
+        
+        new Chart(sourceCtx, {
+            type: 'pie',
+            data: {
+                labels: sources,
+                datasets: [{
+                    data: sourceAmounts,
+                    backgroundColor: sourceColors.slice(0, sources.length)
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            boxWidth: 12
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.raw;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = Math.round((value / total) * 100);
+                                return `${context.label}: $${value.toFixed(2)} (${percentage}%)`;
                             }
                         }
                     }
                 }
-            });
-        } else {
-            // If no data, display a message
-            sourceCtx.font = '16px Arial';
-            sourceCtx.fillStyle = '#6c757d';
-            sourceCtx.textAlign = 'center';
-            sourceCtx.fillText('No source data available', sourceCtx.canvas.width / 2, sourceCtx.canvas.height / 2);
-        }
+            }
+        });
+        
+        // Create merchant chart
+        const merchantCtx = document.getElementById('merchantChart').getContext('2d');
+        
+        // Prepare merchant data
+        const merchants = [];
+        const merchantAmounts = [];
+        
+        // Only include top 6 merchants, group the rest as "Other"
+        {% for merchant in merchants[:6] %}
+            merchants.push('{{ merchant.name }}');
+            merchantAmounts.push({{ merchant.total }});
+        {% endfor %}
+        
+        // Add "Other" category if there are more than 6 merchants
+        {% if merchants|length > 6 %}
+            let otherTotal = 0;
+            {% for merchant in merchants[6:] %}
+                otherTotal += {{ merchant.total }};
+            {% endfor %}
+            merchants.push('Other');
+            merchantAmounts.push(otherTotal);
+        {% endif %}
+        
+        const merchantColors = [
+            'rgba(255, 99, 132, 0.7)',
+            'rgba(54, 162, 235, 0.7)',
+            'rgba(255, 206, 86, 0.7)',
+            'rgba(75, 192, 192, 0.7)',
+            'rgba(153, 102, 255, 0.7)',
+            'rgba(255, 159, 64, 0.7)',
+            'rgba(100, 100, 100, 0.7)'  // for "Other"
+        ];
+        
+        new Chart(merchantCtx, {
+            type: 'doughnut',
+            data: {
+                labels: merchants,
+                datasets: [{
+                    data: merchantAmounts,
+                    backgroundColor: merchantColors.slice(0, merchants.length)
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            boxWidth: 12
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.raw;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = Math.round((value / total) * 100);
+                                return `${context.label}: $${value.toFixed(2)} (${percentage}%)`;
+                            }
+                        }
+                    }
+                },
+                cutout: '60%'
+            }
+        });
     });
 </script>
 {% endblock %} 
