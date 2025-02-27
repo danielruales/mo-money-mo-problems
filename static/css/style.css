@@ -1,0 +1,155 @@
+/* Custom styles for the transaction analysis application */
+
+body {
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.card {
+    border-radius: 0.5rem;
+    transition: transform 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+}
+
+.card-header {
+    border-top-left-radius: 0.5rem;
+    border-top-right-radius: 0.5rem;
+}
+
+.shadow {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+.display-4 {
+    font-weight: 600;
+}
+
+/* Custom styling for transaction table */
+.transaction-table {
+    font-size: 0.9rem;
+}
+
+.transaction-table th {
+    background-color: #f1f1f1;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.transaction-amount {
+    font-weight: 600;
+}
+
+.transaction-amount.positive {
+    color: #28a745;
+}
+
+.transaction-amount.negative {
+    color: #dc3545;
+}
+
+/* Custom styling for filters */
+.filter-section {
+    background-color: #f8f9fa;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Category and merchant badges */
+.category-badge {
+    font-size: 0.8rem;
+    padding: 0.35rem 0.6rem;
+    margin-right: 0.5rem;
+    border-radius: 2rem;
+}
+
+/* Custom styling for charts */
+.chart-container {
+    position: relative;
+    margin: auto;
+    height: 300px;
+    width: 100%;
+}
+
+/* Ensure chart canvases are properly sized */
+canvas {
+    max-width: 100% !important;
+    max-height: 100% !important;
+}
+
+/* Fix for chart rendering issues */
+canvas#timeSeriesChart,
+canvas#sourceChart,
+canvas#categoryChart {
+    width: 100% !important;
+    height: 250px !important;
+    display: block;
+}
+
+/* Deep dive sections */
+.deep-dive-header {
+    background-color: #6c757d;
+    color: white;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.deep-dive-stat {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0;
+}
+
+.deep-dive-label {
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .display-4 {
+        font-size: 2rem;
+    }
+    
+    .card-body {
+        padding: 1rem;
+    }
+    
+    .deep-dive-stat {
+        font-size: 1.5rem;
+    }
+}
+
+/* Add animation for loading states */
+.loading {
+    opacity: 0.6;
+    pointer-events: none;
+    position: relative;
+}
+
+.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2rem;
+    height: 2rem;
+    margin-top: -1rem;
+    margin-left: -1rem;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+} 

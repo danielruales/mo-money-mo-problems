@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}Merchants{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Merchant Analysis</h4>
+                <span class="badge bg-light text-dark">{{ merchants|length }} merchants</span>
+            </div>
+            <div class="card-body">
+                <p class="lead">Breakdown of your spending by merchant</p>
+                
+                <!-- Search and Sort Controls -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="input-group">
+                            <input type="text" id="merchantSearch" class="form-control" placeholder="Search merchants...">
+                            <button class="btn btn-outline-secondary" type="button" id="searchButton">
+                                <i class="bi bi-search"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="d-flex justify-content-end">
+                            <div class="btn-group" role="group">
+                                <button type="button" class="btn btn-outline-primary" data-sort="total" data-order="desc">
+                                    Sort by Amount
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" data-sort="count" data-order="desc">
+                                    Sort by Frequency
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" data-sort="name" data-order="asc">
+                                    Sort by Name
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Merchant Table -->
+                <div class="table-responsive">
+                    <table class="table table-hover" id="merchantTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Merchant</th>
+                                <th>Total Spent</th>
+                                <th>Transactions</th>
+                                <th>Average Amount</th>
+                                <th>Date Range</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for merchant in merchants %}
+                            <tr data-merchant="{{ merchant.name }}" data-total="{{ merchant.total }}" data-count="{{ merchant.count }}">
+                                <td class="fw-bold">{{ merchant.name }}</td>
+                                <td>${{ "%.2f"|format(merchant.total) }}</td>
+                                <td>{{ merchant.count }}</td>
+                                <td>${{ "%.2f"|format(merchant.average) }}</td>
+                                <td>
+                                    <small>{{ merchant.first_date }} to {{ merchant.last_date }}</small>
+                                </td>
+                                <td>
+                                    <a href="/deep-dive/merchant/{{ merchant.name }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-graph-up"></i> Details
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="alert alert-info mt-4" id="noResults" style="display: none;">
+                    <i class="bi bi-info-circle"></i> No merchants found matching your search.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Search functionality
+        const merchantSearch = document.getElementById('merchantSearch');
+        const searchButton = document.getElementById('searchButton');
+        const noResults = document.getElementById('noResults');
+        const merchantTable = document.getElementById('merchantTable');
+        const rows = merchantTable.querySelectorAll('tbody tr');
+        
+        function filterMerchants() {
+            const searchTerm = merchantSearch.value.toLowerCase();
+            let visibleCount = 0;
+            
+            rows.forEach(row => {
+                const merchant = row.getAttribute('data-merchant').toLowerCase();
+                if (merchant.includes(searchTerm)) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            noResults.style.display = visibleCount === 0 ? 'block' : 'none';
+        }
+        
+        merchantSearch.addEventListener('input', filterMerchants);
+        searchButton.addEventListener('click', filterMerchants);
+        
+        // Sorting functionality
+        const sortButtons = document.querySelectorAll('[data-sort]');
+        
+        sortButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const sortBy = this.getAttribute('data-sort');
+                const sortOrder = this.getAttribute('data-order');
+                
+                // Toggle sort order
+                const newOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+                this.setAttribute('data-order', newOrder);
+                
+                // Reset other buttons
+                sortButtons.forEach(btn => {
+                    if (btn !== this) {
+                        btn.setAttribute('data-order', 'asc');
+                    }
+                });
+                
+                // Sort rows
+                const rowsArray = Array.from(rows);
+                rowsArray.sort((a, b) => {
+                    let aValue, bValue;
+                    
+                    if (sortBy === 'name') {
+                        aValue = a.getAttribute('data-merchant');
+                        bValue = b.getAttribute('data-merchant');
+                    } else {
+                        aValue = parseFloat(a.getAttribute(`data-${sortBy}`));
+                        bValue = parseFloat(b.getAttribute(`data-${sortBy}`));
+                    }
+                    
+                    if (sortOrder === 'asc') {
+                        return aValue > bValue ? 1 : -1;
+                    } else {
+                        return aValue < bValue ? 1 : -1;
+                    }
+                });
+                
+                // Reorder the table
+                const tbody = merchantTable.querySelector('tbody');
+                rowsArray.forEach(row => tbody.appendChild(row));
+            });
+        });
+    });
+</script>
+{% endblock %} 

@@ -3,3 +3,5 @@ venv/
 .env
 data/*
 !data/.gitkeep
+analysis_results/*
+!analysis_results/.gitkeep

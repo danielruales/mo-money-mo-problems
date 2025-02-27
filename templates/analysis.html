@@ -1,0 +1,607 @@
+{% extends "base.html" %}
+
+{% block title %}Spending Analysis{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">Spending Analysis</h4>
+            </div>
+            <div class="card-body">
+                <p class="lead">Comprehensive analysis of your spending patterns and financial habits.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Stats -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card bg-primary text-white h-100 shadow">
+            <div class="card-body text-center">
+                <h5 class="card-title">Total Spent</h5>
+                <h2 class="display-4">${{ "%.2f"|format(analysis.total_spent) }}</h2>
+                <p class="card-text">
+                    <small>{{ analysis.total_charges }} transactions</small>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card bg-success text-white h-100 shadow">
+            <div class="card-body text-center">
+                <h5 class="card-title">Avg. Transaction</h5>
+                <h2 class="display-4">${{ "%.2f"|format(analysis.avg_transaction) }}</h2>
+                <p class="card-text">
+                    <small>Median: ${{ "%.2f"|format(analysis.median_transaction) }}</small>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card bg-danger text-white h-100 shadow">
+            <div class="card-body text-center">
+                <h5 class="card-title">Largest Transaction</h5>
+                <h2 class="display-4">${{ "%.2f"|format(analysis.max_transaction) }}</h2>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-3">
+        <div class="card bg-info text-white h-100 shadow">
+            <div class="card-body text-center">
+                <h5 class="card-title">Total Refunded</h5>
+                <h2 class="display-4">${{ "%.2f"|format(analysis.total_refunded) }}</h2>
+                <p class="card-text">
+                    <small>{{ analysis.total_refunds }} refunds</small>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row mb-4">
+    <!-- Category Pie Chart -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Spending by Category</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="categoryPieChart" height="300"></canvas>
+            </div>
+            <div class="card-footer text-center">
+                <a href="/categories" class="btn btn-sm btn-outline-primary">View Category Breakdown</a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Top Merchants Chart -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Top Merchants</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="merchantBarChart" height="300"></canvas>
+            </div>
+            <div class="card-footer text-center">
+                <a href="/merchants" class="btn btn-sm btn-outline-primary">View Merchant Breakdown</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- More Charts -->
+<div class="row mb-4">
+    <!-- Daily Spending -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Daily Spending</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="dailySpendingChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Spending by Day of Week -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Spending by Day of Week</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="weekdaySpendingChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Top Transactions -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Top 10 Transactions</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="topTransactionsChart" height="250" class="mb-4"></canvas>
+                
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Category</th>
+                                <th>Source</th>
+                                <th class="text-end">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for txn in analysis.top_transactions %}
+                            <tr>
+                                <td>{{ txn.transaction_date }}</td>
+                                <td>{{ txn.description }}</td>
+                                <td>
+                                    <a href="/deep-dive/{{ txn.category }}" class="badge bg-secondary text-decoration-none">
+                                        {{ txn.category }}
+                                    </a>
+                                </td>
+                                <td>{{ txn.source }}</td>
+                                <td class="text-end text-danger fw-bold">${{ "%.2f"|format(txn.amount) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Additional Analysis -->
+<div class="row">
+    <!-- Transaction Amount Distribution -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Transaction Amount Distribution</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="transactionDistributionChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Spending by Account Source -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Spending by Account Source</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="sourceSpendingChart" height="250"></canvas>
+                
+                <div class="mt-4">
+                    <h6 class="text-muted mb-3">Breakdown by Account</h6>
+                    <div class="list-group">
+                        {% for source in analysis.spending_by_source %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>{{ source.source }}</strong>
+                                <br>
+                                <small class="text-muted">{{ source.count }} transactions (avg ${{ "%.2f"|format(source.mean) }})</small>
+                            </div>
+                            <span class="badge bg-primary rounded-pill">${{ "%.2f"|format(source.sum) }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Chart.js global settings
+        Chart.defaults.font.family = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+        Chart.defaults.color = '#6c757d';
+        
+        // Set up color palettes
+        const categoryColors = [
+            'rgba(255, 99, 132, 0.7)',
+            'rgba(54, 162, 235, 0.7)',
+            'rgba(255, 206, 86, 0.7)',
+            'rgba(75, 192, 192, 0.7)',
+            'rgba(153, 102, 255, 0.7)',
+            'rgba(255, 159, 64, 0.7)',
+            'rgba(201, 203, 207, 0.7)',
+            'rgba(255, 99, 71, 0.7)',
+            'rgba(50, 205, 50, 0.7)'
+        ];
+        
+        const categoryBorders = categoryColors.map(color => color.replace('0.7', '1'));
+        
+        // ------------------------
+        // Category Pie Chart
+        // ------------------------
+        const categoryData = {{ analysis.spending_by_category|tojson }};
+        const topCategories = categoryData.slice(0, 8);
+        
+        // Calculate 'Other' for remaining categories
+        let otherTotal = 0;
+        if (categoryData.length > 8) {
+            for (let i = 8; i < categoryData.length; i++) {
+                otherTotal += categoryData[i].total_amount;
+            }
+        }
+        
+        const categoryLabels = topCategories.map(cat => cat.category);
+        const categoryAmounts = topCategories.map(cat => cat.total_amount);
+        
+        if (otherTotal > 0) {
+            categoryLabels.push('Other');
+            categoryAmounts.push(otherTotal);
+        }
+        
+        new Chart(document.getElementById('categoryPieChart').getContext('2d'), {
+            type: 'pie',
+            data: {
+                labels: categoryLabels,
+                datasets: [{
+                    data: categoryAmounts,
+                    backgroundColor: categoryColors,
+                    borderColor: categoryBorders,
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            boxWidth: 15,
+                            padding: 15
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.raw;
+                                const total = context.dataset.data.reduce((acc, val) => acc + val, 0);
+                                const percentage = Math.round((value / total) * 100);
+                                return `${context.label}: $${value.toFixed(2)} (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        
+        // ------------------------
+        // Top Merchants Bar Chart
+        // ------------------------
+        const merchantData = {{ analysis.top_merchants|tojson }};
+        const topMerchants = merchantData.slice(0, 10);
+        
+        new Chart(document.getElementById('merchantBarChart').getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: topMerchants.map(m => m.merchant),
+                datasets: [{
+                    label: 'Spending Amount ($)',
+                    data: topMerchants.map(m => m.sum),
+                    backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `$${context.raw.toFixed(2)} (${topMerchants[context.dataIndex].count} transactions)`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value;
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Total Amount ($)'
+                        }
+                    }
+                }
+            }
+        });
+        
+        // ------------------------
+        // Daily Spending Chart
+        // ------------------------
+        const dailySpendingData = {{ analysis.daily_spending|tojson }};
+        
+        new Chart(document.getElementById('dailySpendingChart').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: dailySpendingData.map(d => d.transaction_date),
+                datasets: [{
+                    label: 'Daily Spending',
+                    data: dailySpendingData.map(d => d.amount),
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointBackgroundColor: 'rgba(75, 192, 192, 1)',
+                    tension: 0.2,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `$${context.raw.toFixed(2)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value;
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Amount ($)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        }
+                    }
+                }
+            }
+        });
+        
+        // ------------------------
+        // Weekday Spending Chart
+        // ------------------------
+        const weekdayData = {{ analysis.spending_by_weekday|tojson }};
+        
+        new Chart(document.getElementById('weekdaySpendingChart').getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: weekdayData.map(d => d.day_of_week),
+                datasets: [{
+                    label: 'Total Spending',
+                    data: weekdayData.map(d => d.sum),
+                    backgroundColor: 'rgba(153, 102, 255, 0.7)',
+                    borderColor: 'rgba(153, 102, 255, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const day = weekdayData[context.dataIndex];
+                                return [`$${context.raw.toFixed(2)}`, `${day.count} transactions`];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value;
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Total Amount ($)'
+                        }
+                    }
+                }
+            }
+        });
+        
+        // ------------------------
+        // Top Transactions Chart
+        // ------------------------
+        const topTransactions = {{ analysis.top_transactions|tojson }};
+        
+        // Truncate long descriptions for better display
+        const shortDescriptions = topTransactions.map(t => {
+            let desc = t.description;
+            return desc.length > 25 ? desc.substring(0, 25) + '...' : desc;
+        });
+        
+        new Chart(document.getElementById('topTransactionsChart').getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: shortDescriptions,
+                datasets: [{
+                    label: 'Amount',
+                    data: topTransactions.map(t => t.amount),
+                    backgroundColor: 'rgba(255, 99, 132, 0.7)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(context) {
+                                return topTransactions[context[0].dataIndex].description;
+                            },
+                            label: function(context) {
+                                const txn = topTransactions[context.dataIndex];
+                                return [
+                                    `Amount: $${txn.amount.toFixed(2)}`,
+                                    `Category: ${txn.category}`,
+                                    `Date: ${txn.transaction_date}`
+                                ];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        
+        // ------------------------
+        // Transaction Distribution Chart
+        // ------------------------
+        const distributionData = {{ analysis.transaction_distribution|tojson }};
+        
+        new Chart(document.getElementById('transactionDistributionChart').getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: distributionData.bin_labels,
+                datasets: [{
+                    label: 'Number of Transactions',
+                    data: distributionData.counts,
+                    backgroundColor: 'rgba(255, 206, 86, 0.7)',
+                    borderColor: 'rgba(255, 206, 86, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.raw} transactions`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Number of Transactions'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Transaction Amount Range'
+                        }
+                    }
+                }
+            }
+        });
+        
+        // ------------------------
+        // Source Spending Chart
+        // ------------------------
+        const sourceData = {{ analysis.spending_by_source|tojson }};
+        
+        new Chart(document.getElementById('sourceSpendingChart').getContext('2d'), {
+            type: 'pie',
+            data: {
+                labels: sourceData.map(s => s.source),
+                datasets: [{
+                    data: sourceData.map(s => s.sum),
+                    backgroundColor: categoryColors.slice(0, sourceData.length),
+                    borderColor: categoryBorders.slice(0, sourceData.length),
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            boxWidth: 15,
+                            padding: 10
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const source = sourceData[context.dataIndex];
+                                const value = source.sum;
+                                const total = sourceData.reduce((acc, src) => acc + src.sum, 0);
+                                const percentage = Math.round((value / total) * 100);
+                                return [
+                                    `$${value.toFixed(2)} (${percentage}%)`,
+                                    `${source.count} transactions`
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    });
+</script>
+{% endblock %} 

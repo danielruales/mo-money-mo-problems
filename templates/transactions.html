@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Transactions{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">Transactions</h4>
+                <span class="badge bg-light text-dark">{{ count }} results</span>
+            </div>
+            <div class="card-body">
+                <!-- Filters -->
+                <div class="filter-section mb-4">
+                    <form action="/transactions" method="get" id="filterForm">
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label for="type" class="form-label">Transaction Type</label>
+                                <select class="form-select" id="type" name="type" onchange="this.form.submit()">
+                                    <option value="">All Types</option>
+                                    {% for type in filter_options.types %}
+                                    <option value="{{ type }}" {% if request.args.get('type') == type %}selected{% endif %}>
+                                        {{ type|capitalize }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="category" class="form-label">Category</label>
+                                <select class="form-select" id="category" name="category" onchange="this.form.submit()">
+                                    <option value="">All Categories</option>
+                                    {% for category in filter_options.categories|sort %}
+                                    <option value="{{ category }}" {% if request.args.get('category') == category %}selected{% endif %}>
+                                        {{ category }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="source" class="form-label">Source</label>
+                                <select class="form-select" id="source" name="source" onchange="this.form.submit()">
+                                    <option value="">All Sources</option>
+                                    {% for source in filter_options.sources|sort %}
+                                    <option value="{{ source }}" {% if request.args.get('source') == source %}selected{% endif %}>
+                                        {{ source }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Amount Range</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="min_amount" name="min_amount" 
+                                           placeholder="Min" value="{{ request.args.get('min_amount', '') }}">
+                                    <span class="input-group-text">to</span>
+                                    <input type="number" class="form-control" id="max_amount" name="max_amount" 
+                                           placeholder="Max" value="{{ request.args.get('max_amount', '') }}">
+                                    <button class="btn btn-outline-primary" type="submit">
+                                        <i class="bi bi-funnel"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-end mt-3">
+                            <a href="/transactions" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-x-circle"></i> Clear Filters
+                            </a>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Transactions Table -->
+                <div class="table-responsive">
+                    <table class="table table-hover transaction-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Category</th>
+                                <th>Source</th>
+                                <th>Type</th>
+                                <th class="text-end">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for txn in transactions %}
+                            <tr>
+                                <td>{{ txn.date }}</td>
+                                <td>{{ txn.description }}</td>
+                                <td>
+                                    {% if txn.category %}
+                                    <a href="/deep-dive/{{ txn.category }}" class="badge bg-secondary text-decoration-none">
+                                        {{ txn.category }}
+                                    </a>
+                                    {% endif %}
+                                </td>
+                                <td>{{ txn.source }}</td>
+                                <td>
+                                    {% if txn.type == 'charge' %}
+                                    <span class="badge bg-danger">Charge</span>
+                                    {% elif txn.type == 'payment' %}
+                                    <span class="badge bg-success">Payment</span>
+                                    {% elif txn.type == 'refund' %}
+                                    <span class="badge bg-info">Refund</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <span class="transaction-amount {% if txn.type in ['payment', 'refund'] %}positive{% else %}negative{% endif %}">
+                                        {% if txn.type in ['payment', 'refund'] %}-{% endif %}${{ "%.2f"|format(txn.amount) }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                {% if not transactions %}
+                <div class="alert alert-info mt-4">
+                    <i class="bi bi-info-circle"></i> No transactions found matching your filters.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
