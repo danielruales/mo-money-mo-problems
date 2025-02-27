@@ -19,6 +19,36 @@
     </div>
 </div>
 
+<!-- Date Range Filter -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-body">
+                <form action="/deep-dive/merchant/{{ merchant }}" method="get" id="dateFilterForm" class="mb-0">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <p class="mb-0"><i class="bi bi-calendar3"></i> <strong>Date Range:</strong> {{ date_filter.date_range }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-calendar"></i></span>
+                                <input type="date" class="form-control" id="start_date" name="start_date"
+                                       value="{{ date_filter.start_date }}">
+                                <span class="input-group-text">to</span>
+                                <input type="date" class="form-control" id="end_date" name="end_date"
+                                       value="{{ date_filter.end_date }}">
+                                <button class="btn btn-outline-primary" type="submit">
+                                    <i class="bi bi-filter"></i> Apply
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Summary Stats -->
 <div class="row mb-4">
     <div class="col-md-3 mb-3">

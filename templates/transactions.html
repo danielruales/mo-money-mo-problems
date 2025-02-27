@@ -11,10 +11,31 @@
                 <span class="badge bg-light text-dark">{{ count }} results</span>
             </div>
             <div class="card-body">
+                <!-- Date Range Display -->
+                <div class="mb-3">
+                    <p class="mb-2"><i class="bi bi-calendar3"></i> <strong>Date Range:</strong> {{ date_range }}</p>
+                </div>
+                
                 <!-- Filters -->
                 <div class="filter-section mb-4">
                     <form action="/transactions" method="get" id="filterForm">
                         <div class="row g-3">
+                            <!-- Date Range Filter -->
+                            <div class="col-md-6">
+                                <label class="form-label">Date Range</label>
+                                <div class="input-group mb-3">
+                                    <span class="input-group-text"><i class="bi bi-calendar"></i></span>
+                                    <input type="date" class="form-control" id="start_date" name="start_date"
+                                           value="{{ filter_options.start_date }}">
+                                    <span class="input-group-text">to</span>
+                                    <input type="date" class="form-control" id="end_date" name="end_date"
+                                           value="{{ filter_options.end_date }}">
+                                    <button class="btn btn-outline-primary" type="submit">
+                                        <i class="bi bi-filter"></i> Apply
+                                    </button>
+                                </div>
+                            </div>
+                            
                             <div class="col-md-3">
                                 <label for="type" class="form-label">Transaction Type</label>
                                 <select class="form-select" id="type" name="type" onchange="this.form.submit()">

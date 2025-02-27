@@ -10,8 +10,27 @@
                 <h4 class="mb-0">Financial Dashboard</h4>
             </div>
             <div class="card-body">
-                <p class="lead">This dashboard provides insights into your financial transactions across various accounts.</p>
-                <p>Data range: <strong>{{ date_range }}</strong></p>
+                <div class="row">
+                    <div class="col-md-6">
+                        <p class="lead">This dashboard provides insights into your financial transactions across various accounts.</p>
+                        <p><i class="bi bi-calendar3"></i> Date range: <strong>{{ date_range }}</strong></p>
+                    </div>
+                    <div class="col-md-6">
+                        <form action="/" method="get" id="dateFilterForm">
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-calendar"></i></span>
+                                <input type="date" class="form-control" id="start_date" name="start_date"
+                                       value="{{ date_filter.start_date }}">
+                                <span class="input-group-text">to</span>
+                                <input type="date" class="form-control" id="end_date" name="end_date"
+                                       value="{{ date_filter.end_date }}">
+                                <button class="btn btn-outline-primary" type="submit">
+                                    <i class="bi bi-filter"></i> Apply
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

@@ -9,6 +9,8 @@ import os
 import json
 from flask import Flask, render_template, request, jsonify, send_from_directory
 import pandas as pd
+import datetime
+from dateutil.relativedelta import relativedelta
 from data_eda import analyze_transactions
 from trx_consolidation import consolidate_transactions
 
@@ -25,30 +27,56 @@ def index():
     # Ensure transaction data exists
     ensure_transaction_data()
     
+    # Calculate default date range (previous month)
+    today = datetime.date.today()
+    first_day_prev_month = (today.replace(day=1) - relativedelta(months=1))
+    last_day_prev_month = today.replace(day=1) - datetime.timedelta(days=1)
+    
+    # Format dates as strings for form values
+    default_start_date = first_day_prev_month.strftime('%Y-%m-%d')
+    default_end_date = last_day_prev_month.strftime('%Y-%m-%d')
+    
+    # Get date filters from request, defaulting to previous month
+    start_date = request.args.get('start_date', default_start_date)
+    end_date = request.args.get('end_date', default_end_date)
+    
     # Get transaction data
     transactions = load_transactions()
     
+    # Apply date filters
+    filtered_transactions = transactions.copy()
+    if start_date:
+        filtered_transactions = filtered_transactions[filtered_transactions['transaction_date'] >= pd.to_datetime(start_date)]
+    
+    if end_date:
+        filtered_transactions = filtered_transactions[filtered_transactions['transaction_date'] <= pd.to_datetime(end_date)]
+    
     # Perform basic analysis for the dashboard
-    analysis = analyze_transactions(transactions)
+    analysis = analyze_transactions(filtered_transactions)
     
     # Get counts by transaction type
     txn_counts = {
-        'charges': transactions[transactions['transaction_type'].str.lower() == 'charge'].shape[0],
-        'payments': transactions[transactions['transaction_type'].str.lower() == 'payment'].shape[0],
-        'refunds': transactions[transactions['transaction_type'].str.lower() == 'refund'].shape[0]
+        'charges': filtered_transactions[filtered_transactions['transaction_type'].str.lower() == 'charge'].shape[0],
+        'payments': filtered_transactions[filtered_transactions['transaction_type'].str.lower() == 'payment'].shape[0],
+        'refunds': filtered_transactions[filtered_transactions['transaction_type'].str.lower() == 'refund'].shape[0]
     }
     
     # Get financial summary
-    total_spent = transactions[transactions['transaction_type'].str.lower() == 'charge']['amount'].sum()
-    total_refunded = transactions[transactions['transaction_type'].str.lower() == 'refund']['amount'].abs().sum()
-    total_paid = transactions[transactions['transaction_type'].str.lower() == 'payment']['amount'].abs().sum()
+    total_spent = filtered_transactions[filtered_transactions['transaction_type'].str.lower() == 'charge']['amount'].sum()
+    total_refunded = filtered_transactions[filtered_transactions['transaction_type'].str.lower() == 'refund']['amount'].abs().sum()
+    total_paid = filtered_transactions[filtered_transactions['transaction_type'].str.lower() == 'payment']['amount'].abs().sum()
     
     # Get top 5 categories
-    charges = transactions[transactions['transaction_type'].str.lower() == 'charge']
+    charges = filtered_transactions[filtered_transactions['transaction_type'].str.lower() == 'charge']
     top_categories = charges.groupby('category')['amount'].sum().sort_values(ascending=False).head(5).to_dict()
     
-    # Create date range string
-    date_range = f"{analysis['date_range']['start']} to {analysis['date_range']['end']}"
+    # Create date range string and date filter object
+    date_range = f"{start_date} to {end_date}"
+    date_filter = {
+        'start_date': start_date,
+        'end_date': end_date,
+        'date_range': date_range
+    }
     
     return render_template('index.html',
                           txn_counts=txn_counts,
@@ -57,7 +85,8 @@ def index():
                           total_paid=total_paid,
                           net_spending=total_spent - total_refunded,
                           top_categories=top_categories,
-                          date_range=date_range)
+                          date_range=date_range,
+                          date_filter=date_filter)
 
 @app.route('/analyze')
 def analyze():
@@ -140,7 +169,29 @@ def analyze():
 def categories():
     """Display spending breakdown by category."""
     transactions = load_transactions()
-    charges = transactions[transactions['transaction_type'].str.lower() == 'charge']
+    
+    # Calculate default date range (previous month)
+    today = datetime.date.today()
+    first_day_prev_month = (today.replace(day=1) - relativedelta(months=1))
+    last_day_prev_month = today.replace(day=1) - datetime.timedelta(days=1)
+    
+    # Format dates as strings for form values
+    default_start_date = first_day_prev_month.strftime('%Y-%m-%d')
+    default_end_date = last_day_prev_month.strftime('%Y-%m-%d')
+    
+    # Get date filters from request, defaulting to previous month
+    start_date = request.args.get('start_date', default_start_date)
+    end_date = request.args.get('end_date', default_end_date)
+    
+    # Filter transactions by date
+    filtered_transactions = transactions.copy()
+    if start_date:
+        filtered_transactions = filtered_transactions[filtered_transactions['transaction_date'] >= pd.to_datetime(start_date)]
+    
+    if end_date:
+        filtered_transactions = filtered_transactions[filtered_transactions['transaction_date'] <= pd.to_datetime(end_date)]
+    
+    charges = filtered_transactions[filtered_transactions['transaction_type'].str.lower() == 'charge']
     
     # Get spending by category
     category_data = charges.groupby('category').agg({
@@ -163,13 +214,44 @@ def categories():
             'last_date': row['last_date'].strftime('%Y-%m-%d')
         })
     
-    return render_template('categories.html', categories=categories_list)
+    # Date range information for template
+    date_filter = {
+        'start_date': start_date,
+        'end_date': end_date,
+        'date_range': f"{start_date} to {end_date}"
+    }
+    
+    return render_template('categories.html', 
+                          categories=categories_list, 
+                          date_filter=date_filter)
 
 @app.route('/merchants')
 def merchants():
     """Display spending breakdown by merchant."""
     transactions = load_transactions()
-    charges = transactions[transactions['transaction_type'].str.lower() == 'charge'].copy()
+    
+    # Calculate default date range (previous month)
+    today = datetime.date.today()
+    first_day_prev_month = (today.replace(day=1) - relativedelta(months=1))
+    last_day_prev_month = today.replace(day=1) - datetime.timedelta(days=1)
+    
+    # Format dates as strings for form values
+    default_start_date = first_day_prev_month.strftime('%Y-%m-%d')
+    default_end_date = last_day_prev_month.strftime('%Y-%m-%d')
+    
+    # Get date filters from request, defaulting to previous month
+    start_date = request.args.get('start_date', default_start_date)
+    end_date = request.args.get('end_date', default_end_date)
+    
+    # Filter transactions by date
+    filtered_transactions = transactions.copy()
+    if start_date:
+        filtered_transactions = filtered_transactions[filtered_transactions['transaction_date'] >= pd.to_datetime(start_date)]
+    
+    if end_date:
+        filtered_transactions = filtered_transactions[filtered_transactions['transaction_date'] <= pd.to_datetime(end_date)]
+    
+    charges = filtered_transactions[filtered_transactions['transaction_type'].str.lower() == 'charge'].copy()
     
     # Extract merchant name (first word of description)
     charges.loc[:, 'merchant'] = charges['description'].apply(
@@ -197,12 +279,34 @@ def merchants():
             'last_date': row['last_date'].strftime('%Y-%m-%d')
         })
     
-    return render_template('merchants.html', merchants=merchants_list)
+    # Date range information for template
+    date_filter = {
+        'start_date': start_date,
+        'end_date': end_date,
+        'date_range': f"{start_date} to {end_date}"
+    }
+    
+    return render_template('merchants.html', 
+                          merchants=merchants_list,
+                          date_filter=date_filter)
 
 @app.route('/transactions')
 def transactions():
     """Display all transactions with filtering capability."""
     transactions_df = load_transactions()
+    
+    # Calculate default date range (previous month)
+    today = datetime.date.today()
+    first_day_prev_month = (today.replace(day=1) - relativedelta(months=1))
+    last_day_prev_month = today.replace(day=1) - datetime.timedelta(days=1)
+    
+    # Format dates as strings for form values
+    default_start_date = first_day_prev_month.strftime('%Y-%m-%d')
+    default_end_date = last_day_prev_month.strftime('%Y-%m-%d')
+    
+    # Get date filters from request, defaulting to previous month
+    start_date = request.args.get('start_date', default_start_date)
+    end_date = request.args.get('end_date', default_end_date)
     
     # Apply filters if provided
     txn_type = request.args.get('type')
@@ -212,6 +316,13 @@ def transactions():
     max_amount = request.args.get('max_amount')
     
     filtered_df = transactions_df.copy()
+    
+    # Apply date filters
+    if start_date:
+        filtered_df = filtered_df[filtered_df['transaction_date'] >= pd.to_datetime(start_date)]
+    
+    if end_date:
+        filtered_df = filtered_df[filtered_df['transaction_date'] <= pd.to_datetime(end_date)]
     
     if txn_type:
         filtered_df = filtered_df[filtered_df['transaction_type'].str.lower() == txn_type.lower()]
@@ -247,12 +358,18 @@ def transactions():
     filter_options = {
         'categories': transactions_df['category'].dropna().unique().tolist(),
         'sources': transactions_df['source'].unique().tolist(),
-        'types': ['charge', 'payment', 'refund']
+        'types': ['charge', 'payment', 'refund'],
+        'start_date': start_date,
+        'end_date': end_date
     }
+    
+    # Get date range for display
+    date_range = f"{start_date} to {end_date}"
     
     return render_template('transactions.html', 
                           transactions=transactions_list, 
                           filter_options=filter_options,
+                          date_range=date_range,
                           count=len(transactions_list))
 
 @app.route('/deep-dive/<category>')
@@ -260,6 +377,26 @@ def deep_dive_category(category):
     """Perform a deep-dive analysis on a specific category."""
     transactions = load_transactions()
     charges = transactions[transactions['transaction_type'].str.lower() == 'charge'].copy()
+    
+    # Calculate default date range (previous month)
+    today = datetime.date.today()
+    first_day_prev_month = (today.replace(day=1) - relativedelta(months=1))
+    last_day_prev_month = today.replace(day=1) - datetime.timedelta(days=1)
+    
+    # Format dates as strings for form values
+    default_start_date = first_day_prev_month.strftime('%Y-%m-%d')
+    default_end_date = last_day_prev_month.strftime('%Y-%m-%d')
+    
+    # Get date filters from request, defaulting to previous month
+    start_date = request.args.get('start_date', default_start_date)
+    end_date = request.args.get('end_date', default_end_date)
+    
+    # Apply date filters
+    if start_date:
+        charges = charges[charges['transaction_date'] >= pd.to_datetime(start_date)]
+    
+    if end_date:
+        charges = charges[charges['transaction_date'] <= pd.to_datetime(end_date)]
     
     # Filter to the requested category
     category_txns = charges[charges['category'] == category].copy()
@@ -299,18 +436,46 @@ def deep_dive_category(category):
         'values': time_data.values.tolist()
     }
     
+    # Date range information for template
+    date_filter = {
+        'start_date': start_date,
+        'end_date': end_date,
+        'date_range': f"{start_date} to {end_date}"
+    }
+    
     return render_template('deep_dive_category.html', 
                           category=category,
                           summary=summary,
                           transactions=txns,
                           by_source=by_source,
-                          time_series_data=time_series_data)
+                          time_series_data=time_series_data,
+                          date_filter=date_filter)
 
 @app.route('/deep-dive/merchant/<merchant>')
 def deep_dive_merchant(merchant):
     """Perform a deep-dive analysis on a specific merchant."""
     transactions = load_transactions()
     charges = transactions[transactions['transaction_type'].str.lower() == 'charge'].copy()
+    
+    # Calculate default date range (previous month)
+    today = datetime.date.today()
+    first_day_prev_month = (today.replace(day=1) - relativedelta(months=1))
+    last_day_prev_month = today.replace(day=1) - datetime.timedelta(days=1)
+    
+    # Format dates as strings for form values
+    default_start_date = first_day_prev_month.strftime('%Y-%m-%d')
+    default_end_date = last_day_prev_month.strftime('%Y-%m-%d')
+    
+    # Get date filters from request, defaulting to previous month
+    start_date = request.args.get('start_date', default_start_date)
+    end_date = request.args.get('end_date', default_end_date)
+    
+    # Apply date filters
+    if start_date:
+        charges = charges[charges['transaction_date'] >= pd.to_datetime(start_date)]
+    
+    if end_date:
+        charges = charges[charges['transaction_date'] <= pd.to_datetime(end_date)]
     
     # Extract merchant name (first word of description)
     charges.loc[:, 'merchant'] = charges['description'].apply(
@@ -357,12 +522,20 @@ def deep_dive_merchant(merchant):
         'values': time_data.values.tolist()
     }
     
+    # Date range information for template
+    date_filter = {
+        'start_date': start_date,
+        'end_date': end_date,
+        'date_range': f"{start_date} to {end_date}"
+    }
+    
     return render_template('deep_dive_merchant.html', 
                           merchant=merchant,
                           summary=summary,
                           transactions=txns,
                           by_category=by_category,
-                          time_series_data=time_series_data)
+                          time_series_data=time_series_data,
+                          date_filter=date_filter)
 
 @app.route('/static/<path:filename>')
 def serve_static(filename):
@@ -377,12 +550,21 @@ def api_data():
     # Apply filters
     txn_type = request.args.get('type')
     category = request.args.get('category')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
     
     if txn_type:
         transactions = transactions[transactions['transaction_type'].str.lower() == txn_type.lower()]
     
     if category:
         transactions = transactions[transactions['category'] == category]
+    
+    # Apply date filters
+    if start_date:
+        transactions = transactions[transactions['transaction_date'] >= pd.to_datetime(start_date)]
+    
+    if end_date:
+        transactions = transactions[transactions['transaction_date'] <= pd.to_datetime(end_date)]
     
     # Convert dates to strings for JSON serialization
     transactions['transaction_date'] = transactions['transaction_date'].dt.strftime('%Y-%m-%d')
