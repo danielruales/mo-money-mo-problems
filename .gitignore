@@ -5,3 +5,4 @@ data/*
 !data/.gitkeep
 analysis_results/*
 !analysis_results/.gitkeep
+app_log.txt

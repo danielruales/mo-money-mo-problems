@@ -10,16 +10,33 @@ import json
 from flask import Flask, render_template, request, jsonify, send_from_directory
 import pandas as pd
 import datetime
+import numpy as np
 from dateutil.relativedelta import relativedelta
 from data_eda import analyze_transactions
 from trx_consolidation import consolidate_transactions
+from transaction_enrichment import load_transactions as load_raw_transactions, enrich_transactions
+
+# Add a helper function to convert NumPy types to Python native types
+def convert_to_serializable(obj):
+    if isinstance(obj, (np.integer, np.int64)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: convert_to_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_serializable(i) for i in obj]
+    else:
+        return obj
 
 app = Flask(__name__)
 
 # Configuration
 DATA_FOLDER = 'data'
 ANALYSIS_FOLDER = 'static/analysis_results'
-TRANSACTION_FILE = 'consolidated_transactions.csv'
+TRANSACTION_FILE = 'consolidated_transactions_enriched.csv'
 
 @app.route('/')
 def index():
@@ -656,12 +673,145 @@ def api_data():
     
     return jsonify(transactions.to_dict(orient='records'))
 
+@app.route('/enriched-insights')
+def enriched_insights():
+    """View enriched transaction insights."""
+    try:
+        # Load the enriched transactions
+        if os.path.exists('data/consolidated_transactions_enriched.csv'):
+            enriched_df = pd.read_csv('data/consolidated_transactions_enriched.csv')
+        else:
+            # Fall back to raw transactions and enrich them
+            transactions = load_raw_transactions()
+            enriched_df = enrich_transactions(transactions)
+        
+        # Get some quick stats
+        total_transactions = len(enriched_df)
+        
+        # Get date range
+        date_range = {
+            'min': enriched_df['transaction_date'].min(),
+            'max': enriched_df['transaction_date'].max()
+        }
+        
+        # Calculate spending ratio
+        discretionary = abs(enriched_df[enriched_df['spending_type'] == 'Discretionary']['amount'].sum())
+        non_discretionary = abs(enriched_df[enriched_df['spending_type'] == 'Non-discretionary']['amount'].sum())
+        spending_ratio = discretionary / non_discretionary if non_discretionary > 0 else 0
+        
+        # Recurring transactions
+        recurring_count = enriched_df[enriched_df['is_recurring']].shape[0]
+        recurring_total = abs(enriched_df[enriched_df['is_recurring'] & (enriched_df['amount'] < 0)]['amount'].sum())
+        recurring_percentage = (recurring_count / total_transactions * 100) if total_transactions > 0 else 0
+        
+        # Get subscription data by frequency
+        subscription_data = {}
+        for freq in enriched_df[enriched_df['is_recurring']]['recurring_frequency'].unique():
+            subscription_data[freq] = []
+            # Get merchants for this frequency
+            merchants = enriched_df[(enriched_df['is_recurring']) & 
+                                    (enriched_df['recurring_frequency'] == freq)]['merchant'].unique()
+            
+            for merchant in merchants:
+                # Get most recent transaction for this merchant
+                latest_tx = enriched_df[(enriched_df['merchant'] == merchant) & 
+                                        (enriched_df['is_recurring'])].sort_values('transaction_date', ascending=False).iloc[0]
+                
+                subscription_data[freq].append({
+                    'merchant': merchant,
+                    'amount': abs(latest_tx['amount']),  # Use abs since expenses are now negative
+                    'category': latest_tx['category'],
+                    'subcategory': latest_tx['subcategory'],
+                    'last_date': latest_tx['transaction_date']
+                })
+            
+            # Sort by amount descending
+            subscription_data[freq] = sorted(subscription_data[freq], key=lambda x: x['amount'], reverse=True)
+        
+        # Prepare data for spending type chart
+        spending_type_data = {
+            'labels': [],
+            'values': []
+        }
+        spending_by_type = enriched_df.groupby('spending_type')['amount'].sum()
+        for spending_type, amount in spending_by_type.items():
+            # Skip Credit Payment, Income/Refund, and Transfer
+            if spending_type not in ['Credit Payment', 'Income/Refund', 'Transfer']:
+                spending_type_data['labels'].append(spending_type)
+                spending_type_data['values'].append(abs(amount))  # Use abs since expenses are negative
+        
+        # Prepare data for subcategory chart (top 10)
+        # With our new sign convention, expenses are negative so we filter for negative amounts
+        subcategory_spending = enriched_df[enriched_df['amount'] < 0].groupby('subcategory')['amount'].sum().sort_values().head(10).to_dict()
+        subcategory_data = {
+            'labels': list(subcategory_spending.keys()),
+            'values': [abs(val) for val in subcategory_spending.values()]  # Use abs since expenses are negative
+        }
+        
+        # Calculate spending by day of week
+        day_mapping = {
+            0: 'Monday',
+            1: 'Tuesday',
+            2: 'Wednesday', 
+            3: 'Thursday',
+            4: 'Friday',
+            5: 'Saturday',
+            6: 'Sunday'
+        }
+        
+        # With our new sign convention, expenses are negative so we filter for negative amounts
+        day_of_week_spending = enriched_df[enriched_df['amount'] < 0].groupby('day_of_week')['amount'].sum().to_dict()
+        
+        # Make sure all days are represented even if they have no transactions
+        for i in range(7):
+            if day_mapping[i] not in day_of_week_spending:
+                day_of_week_spending[day_mapping[i]] = 0
+        
+        # Sort by day of week
+        day_of_week_data = {
+            'labels': [day_mapping[i] for i in range(7)],
+            'values': [abs(day_of_week_spending.get(day_mapping[i], 0)) for i in range(7)]  # Use abs since expenses are negative
+        }
+        
+        # Get merchant spending (top 10)
+        # With our new sign convention, expenses are negative so we filter for negative amounts
+        merchant_spending = enriched_df[enriched_df['amount'] < 0].groupby('merchant')['amount'].sum().sort_values().head(10)
+        merchant_spending = {str(k): float(abs(v)) if not callable(v) else 0.0 for k, v in merchant_spending.items()}
+        
+        return render_template('enriched_insights.html',
+                               page_title="Enriched Insights",
+                               total_transactions=total_transactions,
+                               date_range=date_range,
+                               spending_ratio=spending_ratio,
+                               recurring_count=recurring_count,
+                               recurring_total=recurring_total,
+                               recurring_percentage=recurring_percentage,
+                               subscription_data=subscription_data,
+                               spending_type_data=spending_type_data,
+                               subcategory_data=subcategory_data,
+                               day_of_week_data=day_of_week_data,
+                               merchant_spending=merchant_spending)
+    
+    except Exception as e:
+        return render_template('error.html', error=f"Error loading enriched insights: {str(e)}")
+
 def ensure_transaction_data():
-    """Ensure transaction data exists, consolidate if needed."""
-    file_path = os.path.join(DATA_FOLDER, TRANSACTION_FILE)
-    if not os.path.exists(file_path):
+    """Ensure transaction data exists, consolidate and enrich if needed."""
+    # First check for consolidated file
+    consolidated_file_path = os.path.join(DATA_FOLDER, 'consolidated_transactions.csv')
+    if not os.path.exists(consolidated_file_path):
         print(f"Consolidated transaction file not found. Creating it...")
-        consolidate_transactions(DATA_FOLDER, TRANSACTION_FILE)
+        consolidate_transactions(DATA_FOLDER, 'consolidated_transactions.csv')
+    
+    # Then check for enriched file
+    enriched_file_path = os.path.join(DATA_FOLDER, TRANSACTION_FILE)
+    if not os.path.exists(enriched_file_path):
+        print(f"Enriched transaction file not found. Creating it...")
+        # Load consolidated transactions and enrich them
+        raw_transactions = load_raw_transactions(consolidated_file_path)
+        enriched_df = enrich_transactions(raw_transactions)
+        enriched_df.to_csv(enriched_file_path, index=False)
+        print(f"Enriched transactions saved to {enriched_file_path}")
 
 def load_transactions():
     """Load transaction data from the consolidated CSV file."""
@@ -685,11 +835,23 @@ def match_refunds_to_charges(transactions):
     Match refund transactions to their original charges based on description, amount and date proximity.
     Updates the refund_status and refunded_amount fields in the transactions DataFrame.
     """
+    # Check if transaction_type column exists, if not return early
+    if 'transaction_type' not in transactions.columns:
+        print("Warning: transaction_type column not found, skipping refund matching")
+        return
+    
+    # Convert transaction_type to lowercase for consistency
+    transactions['transaction_type'] = transactions['transaction_type'].str.lower()
+    
     # Extract refunds
-    refunds = transactions[transactions['transaction_type'].str.lower() == 'refund'].copy()
+    refunds = transactions[transactions['transaction_type'] == 'refund'].copy()
+    
+    # If no refunds, return early
+    if refunds.empty:
+        return
     
     # Create a copy to avoid SettingWithCopyWarning
-    charges = transactions[transactions['transaction_type'].str.lower() == 'charge'].copy()
+    charges = transactions[transactions['transaction_type'] == 'charge'].copy()
     
     # Process each refund
     for _, refund in refunds.iterrows():
@@ -740,9 +902,6 @@ def create_necessary_folders():
     """Create necessary folders for the application."""
     os.makedirs(DATA_FOLDER, exist_ok=True)
     os.makedirs(ANALYSIS_FOLDER, exist_ok=True)
-
-# Add missing import for numpy
-import numpy as np
 
 if __name__ == '__main__':
     create_necessary_folders()

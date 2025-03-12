@@ -2,7 +2,7 @@
 """
 Transaction Data Processing Script
 
-This script processes transaction data from various bank CSV files (Amex and Chase)
+This script processes transaction data from various bank CSV files (Amex, Chase, SoFi, and Wells Fargo)
 and consolidates them into a standardized format in a single CSV file.
 """
 
@@ -23,7 +23,8 @@ def process_amex_transactions(file_path):
         pd.DataFrame: Standardized DataFrame of transactions
     """
     # Extract account identifier from filename
-    account_id = os.path.basename(file_path).split('_')[0]
+    account_id = re.search(r'Amex(\d+)', os.path.basename(file_path))
+    account_id = account_id.group(1) if account_id else 'Unknown'
     
     # Read the Amex CSV file
     df = pd.read_csv(file_path)
@@ -35,8 +36,10 @@ def process_amex_transactions(file_path):
         'description': df['Description'],
         'amount': df['Amount'],  # Amex amounts are already in the correct format (debit positive, credit negative)
         'category': df['Category'],
-        'source': f'Amex_{account_id}',
-        'additional_details': df['Extended Details'].fillna('')
+        'source': 'Amex',
+        'account_id': f'Amex_{account_id}',
+        'additional_details': df['Extended Details'].fillna(''),
+        'account_type': 'Credit Card'  # Add account type
     })
     
     return standardized_df
@@ -63,13 +66,112 @@ def process_chase_transactions(file_path):
         'transaction_date': pd.to_datetime(df['Transaction Date'], format='%m/%d/%Y'),
         'post_date': pd.to_datetime(df['Post Date'], format='%m/%d/%Y'),
         'description': df['Description'],
-        'amount': df['Amount'] * -1,  # Convert Chase amounts (negative = debit, positive = credit) to match Amex format
+        'amount': df['Amount'],
         'category': df['Category'],
-        'source': f'Chase_{account_id}',
-        'additional_details': df['Memo'].fillna('')
+        'source': 'Chase',
+        'account_id': f'Chase_{account_id}',
+        'additional_details': df['Memo'].fillna(''),
+        'account_type': 'Credit Card'  # Add account type
     })
     
     return standardized_df
+
+def process_sofi_transactions(file_path):
+    """
+    Process SoFi transaction CSV files and convert to a standardized format.
+    
+    Args:
+        file_path (str): Path to the SoFi CSV file
+        
+    Returns:
+        pd.DataFrame: Standardized DataFrame of transactions
+    """
+    # Extract account identifier from filename
+    account_id = re.search(r'Sofi-Checking-(\d+)', os.path.basename(file_path))
+    account_id = account_id.group(1) if account_id else 'Unknown'
+    
+    # Read the SoFi CSV file
+    df = pd.read_csv(file_path)
+    
+    # Standardize the DataFrame
+    standardized_df = pd.DataFrame({
+        'transaction_date': pd.to_datetime(df['Date'], format='%Y-%m-%d'),
+        'post_date': None,  # SoFi doesn't provide separate post date in this format
+        'description': df['Description'],
+        'amount': df['Amount'],
+        'category': df['Type'],  # Use 'Type' as category since SoFi doesn't provide explicit categories
+        'source': 'SoFi',
+        'account_id': f'SoFi_{account_id}',
+        'additional_details': df['Status'].fillna(''),
+        'account_type': 'Checkings'  # Add account type
+    })
+    
+    return standardized_df
+
+def process_wells_fargo_transactions(file_path):
+    """
+    Process Wells Fargo transaction CSV files and convert to a standardized format.
+    Handles both checking and credit card accounts.
+    
+    Args:
+        file_path (str): Path to the Wells Fargo CSV file
+        
+    Returns:
+        pd.DataFrame: Standardized DataFrame of transactions
+    """
+    # Extract account identifier from filename
+    file_name = os.path.basename(file_path).lower()
+    if 'cc' in file_name:
+        account_id = 'CC'  # Credit Card identifier
+        account_type = 'Credit Card'
+    else:
+        account_id = 'WF'  # Default checking identifier
+        account_type = 'Checkings'
+    
+    # Read the Wells Fargo CSV file - note it has no header
+    # The format appears to be Date, Amount, Flag, Empty field, Description
+    df = pd.read_csv(file_path, header=None, names=['Date', 'Amount', 'Flag', 'Empty', 'Description'],
+                    quoting=1)  # quoting=1 for QUOTE_ALL to handle the quoted fields
+    
+    # Standardize the DataFrame
+    standardized_df = pd.DataFrame({
+        'transaction_date': pd.to_datetime(df['Date'], format='%m/%d/%Y'),
+        'post_date': None,  # Wells Fargo doesn't provide post date in this format
+        'description': df['Description'],
+        'amount': df['Amount'].astype(float),  # No need to invert sign - Wells Fargo negatives (outgoing) should remain negative
+                                              # and positives (incoming) should remain positive in our standardized format
+        'category': 'Uncategorized',  # Wells Fargo doesn't provide categories in this format
+        'source': 'WellsFargo',
+        'account_id': f'WellsFargo_{account_id}',
+        'additional_details': df['Flag'].fillna(''),
+        'account_type': account_type  # Use the determined account type
+    })
+    
+    return standardized_df
+
+def process_file(file_path):
+    """
+    Process a transaction file based on its type (Amex, Chase, SoFi, Wells Fargo)
+    
+    Args:
+        file_path (str): Path to the transaction file
+        
+    Returns:
+        pd.DataFrame: Standardized DataFrame of transactions
+    """
+    file_name = os.path.basename(file_path).lower()
+    
+    if 'amex' in file_name:
+        return process_amex_transactions(file_path)
+    elif 'chase' in file_name:
+        return process_chase_transactions(file_path)
+    elif 'sofi' in file_name:
+        return process_sofi_transactions(file_path)
+    elif 'wellsfargo' in file_name:
+        return process_wells_fargo_transactions(file_path)
+    else:
+        print(f"Unsupported file format: {file_path}")
+        return None
 
 def get_date_range_from_filename(file_path):
     """
@@ -94,71 +196,38 @@ def get_date_range_from_filename(file_path):
 
 def consolidate_transactions(data_folder, output_file='consolidated_transactions.csv'):
     """
-    Consolidate all transaction data from CSV files in the specified folder.
+    Consolidate transaction data from multiple sources into a single DataFrame.
     
     Args:
-        data_folder (str): Path to folder containing bank CSV files
-        output_file (str): Name of output consolidated CSV file
+        data_folder (str): Path to folder containing transaction files
+        output_file (str): Name of output CSV file
         
     Returns:
-        pd.DataFrame: Consolidated DataFrame of all transactions
+        pd.DataFrame: Consolidated transactions DataFrame
     """
-    all_transactions = []
+    # Get all CSV files in the data folder
+    csv_files = [f for f in os.listdir(data_folder) if f.endswith('.csv') or f.endswith('.CSV')]
     
-    # Process Amex files
-    for file_path in glob.glob(os.path.join(data_folder, 'Amex*.csv')):
-        try:
-            transactions = process_amex_transactions(file_path)
-            if not transactions.empty:  # Only add non-empty DataFrames
-                all_transactions.append(transactions)
-                print(f"Processed {file_path}: {len(transactions)} transactions")
-            else:
-                print(f"No transactions found in {file_path}")
-        except Exception as e:
-            print(f"Error processing {file_path}: {e}")
+    # Filter out the consolidated output file if it exists
+    csv_files = [f for f in csv_files if f != output_file and f != 'consolidated_transactions_enriched.csv']
     
-    # Process Chase files
-    for file_path in glob.glob(os.path.join(data_folder, 'Chase*.CSV')):
-        try:
-            transactions = process_chase_transactions(file_path)
-            if not transactions.empty:  # Only add non-empty DataFrames
-                all_transactions.append(transactions)
-                print(f"Processed {file_path}: {len(transactions)} transactions")
-            else:
-                print(f"No transactions found in {file_path}")
-        except Exception as e:
-            print(f"Error processing {file_path}: {e}")
+    if not csv_files:
+        raise ValueError(f"No transaction files found in {data_folder}")
     
-    if not all_transactions:
-        print("No transaction files found!")
-        return None
-    
-    # Combine all transactions - handle empty DataFrames to avoid FutureWarning
-    if len(all_transactions) == 1:
-        # If only one DataFrame, no need to concatenate
-        consolidated_df = all_transactions[0]
-    else:
-        # Filter out empty or all-NA columns before concatenation
-        filtered_transactions = []
-        for df in all_transactions:
-            # Drop columns that are all NA
-            df_filtered = df.dropna(axis=1, how='all')
-            filtered_transactions.append(df_filtered)
+    # Process each file
+    filtered_transactions = []
+    for filename in csv_files:
+        filepath = os.path.join(data_folder, filename)
+        transactions = process_file(filepath)
         
-        # Concat with clear dtypes to avoid warnings
-        consolidated_df = pd.concat(filtered_transactions, ignore_index=True, sort=False)
+        if transactions is not None and not transactions.empty:
+            print(f"Processed {filepath}: {len(transactions)} transactions")
+            filtered_transactions.append(transactions)
+        else:
+            print(f"Warning: No transactions processed from {filepath}")
     
-    # Add transaction_type column to categorize each transaction
-    # Initialize with default value
-    consolidated_df['transaction_type'] = 'Charge'
-    
-    # Mark payments (negative amounts that contain 'payment' in description)
-    payment_mask = (consolidated_df['amount'] < 0) & consolidated_df['description'].str.contains('payment', case=False)
-    consolidated_df.loc[payment_mask, 'transaction_type'] = 'Payment'
-    
-    # Mark refunds (negative amounts that don't contain 'payment' in description)
-    refund_mask = (consolidated_df['amount'] < 0) & ~consolidated_df['description'].str.contains('payment', case=False)
-    consolidated_df.loc[refund_mask, 'transaction_type'] = 'Refund'
+    # Concat with clear dtypes to avoid warnings
+    consolidated_df = pd.concat(filtered_transactions, ignore_index=True, sort=False)
     
     # Sort by transaction date
     consolidated_df = consolidated_df.sort_values('transaction_date', ascending=False)
@@ -166,9 +235,8 @@ def consolidate_transactions(data_folder, output_file='consolidated_transactions
     # Save to CSV
     output_path = os.path.join(data_folder, output_file)
     consolidated_df.to_csv(output_path, index=False)
-    print(f"Consolidated {len(consolidated_df)} transactions from {len(all_transactions)} files to {output_path}")
-    print(f"Transaction types: {consolidated_df['transaction_type'].value_counts().to_dict()}")
     
+    print(f"Consolidated {len(consolidated_df)} transactions from {len(filtered_transactions)} files to {output_path}")
     return consolidated_df
 
 def analyze_transactions(transactions_df):
@@ -184,19 +252,16 @@ def analyze_transactions(transactions_df):
     if transactions_df is None or transactions_df.empty:
         return {"error": "No transaction data available"}
     
-    # Create masks for different transaction types
+    # Create masks for different transaction amounts
     spent_mask = transactions_df['amount'] > 0
-    negative_amount_mask = transactions_df['amount'] < 0
-    
-    # Identify payments vs refunds among negative amount transactions
-    # Case-insensitive check for 'payment' in description
-    payment_mask = negative_amount_mask & transactions_df['description'].str.contains('payment', case=False)
-    refund_mask = negative_amount_mask & ~transactions_df['description'].str.contains('payment', case=False)
+    income_mask = transactions_df['amount'] < 0
     
     # Calculate totals
     total_spent = transactions_df[spent_mask]['amount'].sum()
-    total_payments = abs(transactions_df[payment_mask]['amount'].sum())
-    total_refunds = abs(transactions_df[refund_mask]['amount'].sum())
+    
+    # Calculate interest separately (for informational purposes)
+    interest_mask = (transactions_df['amount'] < 0) & transactions_df['description'].str.contains('interest', case=False)
+    total_interest = abs(transactions_df[interest_mask]['amount'].sum())
     
     results = {
         "total_transactions": len(transactions_df),
@@ -204,17 +269,15 @@ def analyze_transactions(transactions_df):
             "start": transactions_df['transaction_date'].min().strftime('%Y-%m-%d'),
             "end": transactions_df['transaction_date'].max().strftime('%Y-%m-%d')
         },
-        "by_source": transactions_df.groupby('source').size().to_dict(),
+        "by_account_id": transactions_df.groupby('account_id').size().to_dict(),
         "by_category": transactions_df.groupby('category').size().to_dict(),
         "spending_by_category": transactions_df.groupby('category')['amount'].sum().to_dict(),
         "total_spent": total_spent,
-        "total_payments": total_payments,
-        "total_refunds": total_refunds,
-        "net_spending": total_spent - total_refunds,
+        "total_interest": total_interest,
         "transaction_counts": {
-            "purchases": spent_mask.sum(),
-            "payments": payment_mask.sum(),
-            "refunds": refund_mask.sum()
+            "total": len(transactions_df),
+            "spent": spent_mask.sum(),
+            "income": income_mask.sum()
         }
     }
     
@@ -235,14 +298,11 @@ def main():
         print(f"Total Transactions: {analysis['total_transactions']}")
         print(f"Date Range: {analysis['date_range']['start']} to {analysis['date_range']['end']}")
         print(f"Total Spent: ${analysis['total_spent']:.2f}")
-        print(f"Total Payments: ${analysis['total_payments']:.2f}")
-        print(f"Total Refunds: ${analysis['total_refunds']:.2f}")
-        print(f"Net Spending (after refunds): ${analysis['net_spending']:.2f}")
+        print(f"Total Interest: ${analysis['total_interest']:.2f}")
         
         print("\nTransaction Counts:")
-        print(f"  Purchases: {analysis['transaction_counts']['purchases']}")
-        print(f"  Payments: {analysis['transaction_counts']['payments']}")
-        print(f"  Refunds: {analysis['transaction_counts']['refunds']}")
+        print(f"  Spent: {analysis['transaction_counts']['spent']}")
+        print(f"  Income: {analysis['transaction_counts']['income']}")
         
         print("\nTop 5 Spending Categories:")
         spending_by_category = sorted(

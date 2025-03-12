@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+
+{% block title %}Enriched Financial Insights{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Enriched Financial Insights</h1>
+    
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-4 shadow">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">Overview</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Total Transactions:</strong> {{ total_transactions }}</p>
+                    <p><strong>Date Range:</strong> {{ date_range.start }} to {{ date_range.end }}</p>
+                    <p><strong>Discretionary to Non-discretionary Ratio:</strong> {{ spending_ratio }}</p>
+                    <p><strong>Recurring Transactions:</strong> {{ recurring_count }} ({{ recurring_percentage }}% of total)</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card mb-4 shadow">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">Spending Types</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="spendingTypeChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-4 shadow">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">Top Subcategories by Spending</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="subcategoryChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card mb-4 shadow">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">Spending by Day of Week</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="dayOfWeekChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card mb-4 shadow">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">Monthly Spending: Discretionary vs Non-discretionary</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="monthlySpendingChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card mb-4 shadow">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="card-title mb-0">Recurring Subscriptions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Merchant</th>
+                                    <th>Amount</th>
+                                    <th>Frequency</th>
+                                    <th>Category</th>
+                                    <th>Subcategory</th>
+                                    <th>Last Transaction</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for subscription in subscription_data %}
+                                <tr>
+                                    <td>{{ subscription.merchant }}</td>
+                                    <td>${{ "%.2f"|format(subscription.amount) }}</td>
+                                    <td>{{ subscription.frequency }}</td>
+                                    <td>{{ subscription.category }}</td>
+                                    <td>{{ subscription.sub_category }}</td>
+                                    <td>{{ subscription.last_date }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-4 shadow">
+                <div class="card-header bg-success text-white">
+                    <h5 class="card-title mb-0">Discretionary Spending</h5>
+                </div>
+                <div class="card-body">
+                    <h3 class="text-center">${{ "%.2f"|format(spending_amounts.get('Discretionary', 0)) }}</h3>
+                    <p class="text-center">{{ spending_type_counts.get('Discretionary', 0) }} transactions</p>
+                    <p class="text-center">Includes: Entertainment, Dining, Shopping, etc.</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card mb-4 shadow">
+                <div class="card-header bg-info text-white">
+                    <h5 class="card-title mb-0">Non-discretionary Spending</h5>
+                </div>
+                <div class="card-body">
+                    <h3 class="text-center">${{ "%.2f"|format(spending_amounts.get('Non-discretionary', 0)) }}</h3>
+                    <p class="text-center">{{ spending_type_counts.get('Non-discretionary', 0) }} transactions</p>
+                    <p class="text-center">Includes: Groceries, Utilities, Health, etc.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card mb-4 shadow">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">Weekday vs Weekend Spending</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h4 class="text-center">Weekday</h4>
+                            <h3 class="text-center">${{ "%.2f"|format(weekday_spending) }}</h3>
+                        </div>
+                        <div class="col-md-6">
+                            <h4 class="text-center">Weekend</h4>
+                            <h3 class="text-center">${{ "%.2f"|format(weekend_spending) }}</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card mb-4 shadow">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">Top Merchants by Spending</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Merchant</th>
+                                    <th>Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for merchant, amount in merchant_spending.items() %}
+                                <tr>
+                                    <td>{{ merchant }}</td>
+                                    <td>${{ "%.2f"|format(amount) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Spending Type Chart
+        const spendingTypeCtx = document.getElementById('spendingTypeChart').getContext('2d');
+        const spendingTypeChart = new Chart(spendingTypeCtx, {
+            type: 'pie',
+            data: {
+                labels: {{ spending_type_data.labels|tojson }},
+                datasets: [{
+                    data: {{ spending_type_data.values|tojson }},
+                    backgroundColor: [
+                        '#4CAF50', // Discretionary
+                        '#2196F3', // Non-discretionary
+                        '#FFC107', // Transfer
+                        '#9C27B0', // Credit Payment
+                        '#F44336'  // Income/Refund
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'right'
+                    },
+                    title: {
+                        display: true,
+                        text: 'Spending by Type'
+                    }
+                }
+            }
+        });
+        
+        // Subcategory Chart
+        const subcategoryCtx = document.getElementById('subcategoryChart').getContext('2d');
+        const subcategoryChart = new Chart(subcategoryCtx, {
+            type: 'bar',
+            data: {
+                labels: {{ subcategory_data.labels|tojson }},
+                datasets: [{
+                    label: 'Spending Amount',
+                    data: {{ subcategory_data.values|tojson }},
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    title: {
+                        display: true,
+                        text: 'Top Subcategories'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Day of Week Chart
+        const dayOfWeekCtx = document.getElementById('dayOfWeekChart').getContext('2d');
+        const dayOfWeekChart = new Chart(dayOfWeekCtx, {
+            type: 'bar',
+            data: {
+                labels: {{ day_of_week_data.labels|tojson }},
+                datasets: [{
+                    label: 'Amount Spent',
+                    data: {{ day_of_week_data.values|tojson }},
+                    backgroundColor: 'rgba(153, 102, 255, 0.6)',
+                    borderColor: 'rgba(153, 102, 255, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    title: {
+                        display: true,
+                        text: 'Spending by Day of Week'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Monthly Spending Chart
+        const monthlyCtx = document.getElementById('monthlySpendingChart').getContext('2d');
+        const monthlyChart = new Chart(monthlyCtx, {
+            type: 'bar',
+            data: {
+                labels: {{ monthly_data.labels|tojson }},
+                datasets: [
+                    {
+                        label: 'Discretionary',
+                        data: {{ monthly_data.discretionary|tojson }},
+                        backgroundColor: 'rgba(76, 175, 80, 0.6)',
+                        borderColor: 'rgba(76, 175, 80, 1)',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Non-discretionary',
+                        data: {{ monthly_data.non_discretionary|tojson }},
+                        backgroundColor: 'rgba(33, 150, 243, 0.6)',
+                        borderColor: 'rgba(33, 150, 243, 1)',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Monthly Spending Breakdown'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value;
+                            }
+                        }
+                    },
+                    x: {
+                        stacked: false
+                    }
+                }
+            }
+        });
+    });
+</script>
+{% endblock %} 
